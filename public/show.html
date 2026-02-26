@@ -22,20 +22,6 @@
       z-index: 1;
     }
 
-    /* Small picture-in-picture video preview */
-    #pip-video {
-      position: fixed;
-      bottom: 16px;
-      right: 16px;
-      width: 240px;
-      height: 180px;
-      border: 2px solid rgba(255,255,255,0.15);
-      border-radius: 8px;
-      object-fit: cover;
-      z-index: 10;
-      background: #111;
-    }
-
     #status {
       position: fixed;
       top: 12px;
@@ -128,17 +114,12 @@
   </div>
 
   <canvas id="three-canvas"></canvas>
-  <video id="pip-video" autoplay playsinline muted></video>
 
   <!-- PeerJS (handles signaling via free cloud server) -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 
   <!-- Three.js via CDN -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-
-  <!-- MediaPipe Hands — run hand tracking locally on the received video -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.min.js"></script>
 
   <!-- App modules -->
   <script src="/js/config.js"></script>

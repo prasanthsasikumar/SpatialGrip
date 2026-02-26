@@ -1,12 +1,12 @@
 /**
  * readerClient.js — /read page logic
  *
- * Architecture (v3 — video-only):
+ * Architecture (v4 — data-only):
  * 1. Gets room code from URL (?room=XXXX) or prompts user.
- * 2. Starts the camera, optionally draws debug landmark overlay.
- * 3. Sends the camera stream to the viewer via PeerJS call.
+ * 2. Starts the camera, runs hand tracking locally.
+ * 3. Sends hand-tracking data to the viewer via PeerJS data connection.
  *
- * Hand tracking for 3D control happens on the VIEWER side.
+ * NO video is sent to the viewer.
  */
 
 (async () => {
@@ -20,11 +20,11 @@
 
   // ── State ───────────────────────────────────────────────────────────────
   let peer = null;
-  let mediaConn = null;
+  let dataConn = null;
   let roomCode = null;
   let cameraStream = null;
 
-  // ── 1. Start camera directly (no Camera utility) ───────────────────────
+  // ── 1. Start camera (needed for local hand tracking) ───────────────────
   updateStatus('Starting camera…', false);
 
   try {
@@ -49,7 +49,7 @@
     return;
   }
 
-  // Optional: debug hand overlay (doesn't affect the stream)
+  // Optional: debug hand overlay on the reader side
   _initHandOverlay(videoEl, canvasEl);
 
   // ── 2. Room code handling ───────────────────────────────────────────────
@@ -73,7 +73,7 @@
     if (e.key === 'Enter') joinBtn.click();
   });
 
-  // ── 3. Connect to viewer — video call only ─────────────────────────────
+  // ── 3. Connect to viewer — data connection only (no video) ─────────────
   function startConnection() {
     roomUI.style.display = 'none';
     updateStatus(`Joining room ${roomCode}…`, false);
@@ -86,32 +86,27 @@
     peer.on('open', (id) => {
       console.log('[reader] peer open:', id);
 
-      if (!cameraStream || !cameraStream.active) {
-        console.error('[reader] no camera stream!');
-        updateStatus('Error: no camera stream', false);
-        return;
-      }
+      // Open a data connection to the viewer (no video stream)
+      console.log('[reader] connecting data channel to viewer:', viewerId);
+      dataConn = peer.connect(viewerId, { reliable: true });
 
-      // Send the raw camera stream directly — no cloning needed
-      console.log('[reader] calling viewer:', viewerId,
-        'stream active:', cameraStream.active,
-        'tracks:', cameraStream.getTracks().map(t => `${t.kind}:${t.readyState}`).join(', '));
-      mediaConn = peer.call(viewerId, cameraStream);
+      dataConn.on('open', () => {
+        console.log('[reader] data connection open');
+        updateStatus('Connected ✓', true);
 
-      mediaConn.on('stream', () => {
-        console.log('[reader] call established (stream event)');
+        // Send a hello message to confirm the channel works
+        dataConn.send({ type: 'hello', message: 'hello' });
+        console.log('[reader] sent hello');
       });
 
-      mediaConn.on('close', () => {
-        console.log('[reader] call closed');
-        updateStatus('Call ended', false);
+      dataConn.on('close', () => {
+        console.log('[reader] data connection closed');
+        updateStatus('Disconnected', false);
       });
 
-      mediaConn.on('error', (err) => {
-        console.error('[reader] call error:', err);
+      dataConn.on('error', (err) => {
+        console.error('[reader] data connection error:', err);
       });
-
-      updateStatus('Streaming ✓', true);
     });
 
     peer.on('error', (err) => {
