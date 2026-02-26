@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>SpatialGrip — Reader</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      color: #fff;
+      font-family: system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #status {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      font-size: 13px;
+      opacity: 0.7;
+      z-index: 10;
+    }
+    #status .dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      background: #f44;
+    }
+    #status.connected .dot { background: #4f4; }
+
+    /* Camera preview — fills the viewport on a phone */
+    #camera-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    /* Canvas overlay for drawing landmarks */
+    #overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    #info {
+      position: fixed;
+      bottom: 12px;
+      font-size: 12px;
+      opacity: 0.5;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="status"><span class="dot"></span>Connecting…</div>
+
+  <div id="camera-container">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="overlay"></canvas>
+  </div>
+
+  <div id="info">SpatialGrip Reader — point camera at your hand</div>
+
+  <!-- MediaPipe Hands via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.min.js"></script>
+
+  <!-- App modules -->
+  <script src="/js/config.js"></script>
+  <script src="/js/handTracker.js"></script>
+  <script src="/js/readerClient.js"></script>
+
+</body>
+</html>

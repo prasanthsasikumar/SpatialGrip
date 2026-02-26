@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SpatialGrip — Viewer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      color: #fff;
+      font-family: system-ui, sans-serif;
+      overflow: hidden;
+      height: 100vh;
+    }
+
+    /* Three.js canvas fills viewport */
+    #three-canvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 1;
+    }
+
+    /* Small picture-in-picture video preview */
+    #pip-video {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      width: 240px;
+      height: 180px;
+      border: 2px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      object-fit: cover;
+      z-index: 10;
+      background: #111;
+    }
+
+    #status {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      font-size: 13px;
+      opacity: 0.7;
+      z-index: 10;
+    }
+    #status .dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      background: #f44;
+    }
+    #status.connected .dot { background: #4f4; }
+
+    /* HUD overlay for debug info */
+    #hud {
+      position: fixed;
+      top: 12px;
+      right: 16px;
+      font-size: 11px;
+      opacity: 0.5;
+      z-index: 10;
+      text-align: right;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="status"><span class="dot"></span>Waiting for reader…</div>
+  <div id="hud"></div>
+
+  <canvas id="three-canvas"></canvas>
+  <video id="pip-video" autoplay playsinline muted></video>
+
+  <!-- Three.js via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
+  <!-- App modules -->
+  <script src="/js/config.js"></script>
+  <script src="/js/gestureInterpreter.js"></script>
+  <script src="/js/sceneManager.js"></script>
+  <script src="/js/viewerClient.js"></script>
+
+</body>
+</html>

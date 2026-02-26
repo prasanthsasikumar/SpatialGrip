@@ -1,0 +1,16 @@
+{
+  "name": "spatialgrip",
+  "version": "1.0.0",
+  "description": "Stream camera from wearable/phone to laptop and manipulate 3D objects via hand tracking",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.16.0"
+  },
+  "keywords": ["webrtc", "hand-tracking", "threejs", "mediapipe", "spatial"],
+  "license": "MIT"
+}
