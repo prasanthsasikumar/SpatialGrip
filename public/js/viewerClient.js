@@ -68,6 +68,10 @@
       }
     };
 
+    ws.onerror = (err) => {
+      console.warn('[viewer] ws error', err);
+    };
+
     ws.onclose = () => {
       console.log('[viewer] ws closed — reconnecting in 2 s');
       updateStatus('Disconnected — retrying…', false);

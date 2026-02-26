@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SpatialGrip</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      text-align: center;
+    }
+    h1 {
+      font-size: 2.4rem;
+      font-weight: 300;
+      letter-spacing: 0.15em;
+      margin-bottom: 8px;
+    }
+    h1 span { color: #00ccff; }
+    .sub {
+      font-size: 0.95rem;
+      opacity: 0.5;
+      margin-bottom: 48px;
+    }
+    .links {
+      display: flex;
+      gap: 24px;
+    }
+    a {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding: 28px 40px;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      color: #fff;
+      text-decoration: none;
+      transition: all 0.2s;
+      min-width: 180px;
+    }
+    a:hover {
+      border-color: #00ccff;
+      background: rgba(0,204,255,0.06);
+    }
+    .icon { font-size: 2rem; }
+    .label { font-size: 1.1rem; font-weight: 500; }
+    .desc { font-size: 0.8rem; opacity: 0.5; }
+    .footer {
+      position: fixed;
+      bottom: 16px;
+      font-size: 0.75rem;
+      opacity: 0.3;
+    }
+  </style>
+</head>
+<body>
+  <h1>Spatial<span>Grip</span></h1>
+  <p class="sub">Hand-tracked 3D manipulation over WebRTC</p>
+
+  <div class="links">
+    <a href="/read">
+      <div class="icon">📱</div>
+      <div class="label">/read</div>
+      <div class="desc">Open on phone — sends camera + hand data</div>
+    </a>
+    <a href="/show">
+      <div class="icon">🖥️</div>
+      <div class="label">/show</div>
+      <div class="desc">Open on laptop — 3D viewer</div>
+    </a>
+  </div>
+
+  <div class="footer">SpatialLens · FlowsXR</div>
+</body>
+</html>

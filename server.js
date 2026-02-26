@@ -50,15 +50,17 @@ wss.on('connection', (ws, req) => {
   if (role === 'reader') {
     reader = ws;
     console.log('[signaling] reader connected');
-    // If the viewer is already waiting, tell both sides they can start
+    // If the viewer is already waiting, tell both sides to start
     if (viewer && viewer.readyState === 1) {
       viewer.send(JSON.stringify({ type: 'reader-ready' }));
+      ws.send(JSON.stringify({ type: 'viewer-ready' }));  // tell reader to send offer
     }
   } else if (role === 'viewer') {
     viewer = ws;
     console.log('[signaling] viewer connected');
     if (reader && reader.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'reader-ready' }));
+      ws.send(JSON.stringify({ type: 'reader-ready' }));    // tell viewer reader exists
+      reader.send(JSON.stringify({ type: 'viewer-ready' })); // tell reader to send offer
     }
   }
 

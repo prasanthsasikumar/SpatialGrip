@@ -30,22 +30,35 @@
     };
 
     ws.onmessage = async (evt) => {
-      const msg = JSON.parse(evt.data);
+      let msg;
+      try { msg = JSON.parse(evt.data); } catch { return; }
+
+      // Server tells us the viewer is connected — start the WebRTC negotiation
+      if (msg.type === 'viewer-ready') {
+        console.log('[reader] viewer is ready — starting call');
+        updateStatus('Viewer connected — negotiating…', true);
+        await startCall();
+        return;
+      }
 
       // The viewer sent us an answer to our offer
       if (msg.type === 'answer') {
         console.log('[reader] received answer');
-        await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+        if (pc) await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
       }
 
       // ICE candidate from viewer
       if (msg.type === 'ice-candidate' && msg.candidate) {
         try {
-          await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+          if (pc) await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
         } catch (e) {
           console.warn('[reader] ice error', e);
         }
       }
+    };
+
+    ws.onerror = (err) => {
+      console.warn('[reader] ws error', err);
     };
 
     ws.onclose = () => {
@@ -141,32 +154,6 @@
 
   // ── 5. Connect signaling & wait for viewer ─────────────────────────────
   connectWS();
-
-  // When the server tells us the viewer is ready, initiate the call
-  // (handled inside ws.onmessage for 'reader-ready' in the flow below)
-  const _origOnMsg = null;
-  const _patchViewerReady = () => {
-    const origHandler = ws.onmessage;
-    ws.onmessage = async (evt) => {
-      const msg = JSON.parse(evt.data);
-      if (msg.type === 'reader-ready') {
-        // This message means the viewer is also connected — start the call
-        await startCall();
-        return;
-      }
-      origHandler(evt);
-    };
-  };
-
-  // Patch after ws connects
-  const origOnOpen = null;
-  const _waitForWS = setInterval(() => {
-    if (ws && ws.readyState === 1) {
-      clearInterval(_waitForWS);
-      _patchViewerReady();
-      // If viewer is already connected, the server sent reader-ready on connect
-    }
-  }, 200);
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   function updateStatus(text, ok) {
