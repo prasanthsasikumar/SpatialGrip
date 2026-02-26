@@ -1,27 +1,55 @@
 /**
  * config.js — Shared constants for SpatialGrip
  *
- * Both /read and /show import this file so connection parameters stay in sync.
+ * Works in both local (node server.js) and hosted (Vercel) modes.
+ * Signaling uses PeerJS cloud — no WebSocket server required.
  */
 
 // eslint-disable-next-line no-unused-vars
 const SG_CONFIG = (() => {
-  // Derive WebSocket URL from current page location (works over LAN too)
-  const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  const wsBase = `${wsProtocol}://${location.host}`;
+  /**
+   * Generate a short alphanumeric room code.
+   * Used as a PeerJS ID prefix so reader + viewer find each other.
+   */
+  function generateRoomCode(len = 6) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous 0/O/1/I
+    let code = '';
+    const arr = new Uint8Array(len);
+    crypto.getRandomValues(arr);
+    for (let i = 0; i < len; i++) code += chars[arr[i] % chars.length];
+    return code;
+  }
+
+  /**
+   * Read ?room=XXXX from the URL, or return null.
+   */
+  function getRoomFromURL() {
+    return new URLSearchParams(location.search).get('room');
+  }
 
   return Object.freeze({
-    // ── WebSocket ───────────────────────────────────────────────────────
-    WS_URL_READER: `${wsBase}?role=reader`,
-    WS_URL_VIEWER: `${wsBase}?role=viewer`,
+    // ── Room helpers ────────────────────────────────────────────────────
+    generateRoomCode,
+    getRoomFromURL,
 
-    // ── WebRTC ──────────────────────────────────────────────────────────
-    RTC_CONFIG: {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-      ],
+    // ── PeerJS ──────────────────────────────────────────────────────────
+    // Uses the free PeerJS cloud signaling server (0.peerjs.com)
+    // No custom WebSocket server needed — works on Vercel, GitHub Pages, etc.
+    PEER_CONFIG: {
+      debug: 1,   // 0 = none, 1 = errors, 2 = warnings, 3 = all
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+        ],
+      },
     },
+
+    // PeerJS peer ID conventions:
+    //   Viewer:  "sg-<ROOM>-viewer"
+    //   Reader:  "sg-<ROOM>-reader"
+    peerIdViewer: (room) => `sg-${room}-viewer`,
+    peerIdReader: (room) => `sg-${room}-reader`,
 
     // ── Camera constraints (rear camera preferred) ──────────────────────
     CAMERA_CONSTRAINTS: {

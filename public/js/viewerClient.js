@@ -1,10 +1,12 @@
 /**
- * viewerClient.js — /show page logic
+ * viewerClient.js — /show page logic (PeerJS edition)
  *
- * 1. Opens a WebSocket to the signaling server (role=viewer).
- * 2. Waits for a WebRTC offer from /read, answers it, receives the video stream.
- * 3. Listens for hand-landmark data on the DataChannel (or WebSocket fallback).
+ * 1. Generates a room code and registers as a PeerJS peer.
+ * 2. Displays the code + QR so the phone can connect.
+ * 3. Receives video call and data connection from /read.
  * 4. Feeds landmarks through GestureInterpreter → SceneManager each frame.
+ *
+ * No custom WebSocket server required — works on Vercel or any static host.
  */
 
 (() => {
@@ -13,124 +15,101 @@
   const canvasEl = document.getElementById('three-canvas');
   const statusEl = document.getElementById('status');
   const hudEl    = document.getElementById('hud');
+  const roomCodeEl  = document.getElementById('room-code');
+  const roomPanel   = document.getElementById('room-panel');
+  const qrEl        = document.getElementById('qr-code');
 
   // ── State ───────────────────────────────────────────────────────────────
-  let ws       = null;
-  let pc       = null;
-  let latestGesture = null;
+  let peer = null;
   let framesReceived = 0;
 
   // ── 1. Initialise Three.js scene ────────────────────────────────────────
   SceneManager.init(canvasEl);
 
-  // ── 2. WebSocket to signaling server ────────────────────────────────────
-  function connectWS() {
-    ws = new WebSocket(SG_CONFIG.WS_URL_VIEWER);
+  // ── 2. Generate room code + register PeerJS ─────────────────────────────
+  const roomCode = SG_CONFIG.getRoomFromURL() || SG_CONFIG.generateRoomCode();
+  const myId = SG_CONFIG.peerIdViewer(roomCode);
 
-    ws.onopen = () => {
-      console.log('[viewer] ws connected');
-      updateStatus('Waiting for reader…', false);
-    };
+  // Display room code
+  roomCodeEl.textContent = roomCode;
 
-    ws.onmessage = async (evt) => {
-      const msg = JSON.parse(evt.data);
+  // Build a join URL for the phone
+  const joinURL = `${location.origin}/read?room=${roomCode}`;
 
-      // Reader has connected and is ready to negotiate
-      if (msg.type === 'reader-ready') {
-        console.log('[viewer] reader is ready');
-        updateStatus('Reader connected — negotiating…', false);
-      }
-
-      // ── Signaling: handle offer from reader ───────────────────────────
-      if (msg.type === 'offer') {
-        console.log('[viewer] received offer');
-        await handleOffer(msg.sdp);
-      }
-
-      // ICE candidate from reader
-      if (msg.type === 'ice-candidate' && msg.candidate) {
-        try {
-          if (pc) await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-        } catch (e) {
-          console.warn('[viewer] ice error', e);
-        }
-      }
-
-      // ── Landmark data (WebSocket fallback path) ───────────────────────
-      if (msg.type === 'landmarks') {
-        _processLandmarks(msg.lm);
-      }
-
-      // ── Depth placeholder ─────────────────────────────────────────────
-      if (msg.type === 'depth') {
-        // Future: feed depth info into SceneManager for z-positioning
-        console.log('[viewer] depth data received (placeholder)');
-      }
-    };
-
-    ws.onerror = (err) => {
-      console.warn('[viewer] ws error', err);
-    };
-
-    ws.onclose = () => {
-      console.log('[viewer] ws closed — reconnecting in 2 s');
-      updateStatus('Disconnected — retrying…', false);
-      setTimeout(connectWS, 2000);
-    };
+  // Generate QR code (using a public QR API — no dependency needed)
+  if (qrEl) {
+    qrEl.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(joinURL)}&bgcolor=000000&color=ffffff`;
+    qrEl.alt = joinURL;
+    qrEl.title = joinURL;
   }
 
-  // ── 3. Handle WebRTC offer and create answer ───────────────────────────
-  async function handleOffer(sdp) {
-    pc = new RTCPeerConnection(SG_CONFIG.RTC_CONFIG);
+  updateStatus(`Room: ${roomCode} — waiting for reader…`, false);
 
-    // When we receive the remote video track, show it in PiP
-    pc.ontrack = (evt) => {
-      console.log('[viewer] received track:', evt.track.kind);
-      if (evt.streams && evt.streams[0]) {
-        pipVideo.srcObject = evt.streams[0];
+  peer = new Peer(myId, SG_CONFIG.PEER_CONFIG);
+
+  peer.on('open', (id) => {
+    console.log('[viewer] peer open:', id);
+    updateStatus(`Room: ${roomCode} — scan QR or enter code on phone`, false);
+  });
+
+  // ── 3. Receive video call from reader ───────────────────────────────────
+  peer.on('call', (call) => {
+    console.log('[viewer] incoming call from reader');
+    updateStatus('Reader connecting…', false);
+
+    // Answer with no stream (viewer doesn't send video back)
+    call.answer();
+
+    call.on('stream', (remoteStream) => {
+      console.log('[viewer] received video stream');
+      pipVideo.srcObject = remoteStream;
+      updateStatus('Streaming ✓', true);
+      // Hide the room panel once connected
+      if (roomPanel) roomPanel.classList.add('connected');
+    });
+
+    call.on('close', () => {
+      console.log('[viewer] call closed');
+      updateStatus(`Room: ${roomCode} — reader disconnected`, false);
+      if (roomPanel) roomPanel.classList.remove('connected');
+    });
+
+    call.on('error', (err) => {
+      console.error('[viewer] call error:', err);
+    });
+  });
+
+  // ── 4. Receive data connection for landmarks ───────────────────────────
+  peer.on('connection', (conn) => {
+    console.log('[viewer] data connection from reader');
+
+    conn.on('data', (data) => {
+      if (data && data.type === 'landmarks') {
+        _processLandmarks(data.lm);
       }
-    };
+    });
 
-    // DataChannel for landmark data (reader creates it, we listen)
-    pc.ondatachannel = (evt) => {
-      console.log('[viewer] dataChannel received');
-      const dc = evt.channel;
-      dc.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          if (msg.type === 'landmarks') {
-            _processLandmarks(msg.lm);
-          }
-        } catch { /* ignore malformed */ }
-      };
-    };
+    conn.on('close', () => {
+      console.log('[viewer] data connection closed');
+    });
+  });
 
-    // ICE → relay
-    pc.onicecandidate = (evt) => {
-      if (evt.candidate && ws && ws.readyState === 1) {
-        ws.send(JSON.stringify({
-          type: 'ice-candidate',
-          candidate: evt.candidate,
-        }));
-      }
-    };
+  peer.on('error', (err) => {
+    console.error('[viewer] peer error:', err);
+    if (err.type === 'unavailable-id') {
+      updateStatus('Another viewer already has this room code — refresh to get a new one', false);
+    } else {
+      updateStatus(`Error: ${err.type}`, false);
+    }
+  });
 
-    pc.oniceconnectionstatechange = () => {
-      console.log('[viewer] ice state:', pc.iceConnectionState);
-      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
-        updateStatus('Streaming', true);
-      }
-    };
+  peer.on('disconnected', () => {
+    console.log('[viewer] peer disconnected — reconnecting…');
+    updateStatus('Reconnecting…', false);
+    peer.reconnect();
+  });
 
-    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-
-    ws.send(JSON.stringify({ type: 'answer', sdp: pc.localDescription }));
-    console.log('[viewer] answer sent');
-  }
-
-  // ── 4. Process incoming landmarks ──────────────────────────────────────
+  // ── 5. Process incoming landmarks ──────────────────────────────────────
   let _gestureTimeout = null;
 
   function _processLandmarks(lm) {
@@ -138,7 +117,6 @@
     const gesture = GestureInterpreter.interpret(lm);
     if (!gesture) return;
 
-    latestGesture = gesture;
     SceneManager.applyGesture(gesture);
 
     // Mark that we're receiving gesture data (stops idle rotation)
@@ -171,7 +149,4 @@
     statusEl.innerHTML = `<span class="dot"></span>${text}`;
     statusEl.className = ok ? 'connected' : '';
   }
-
-  // ── Go ─────────────────────────────────────────────────────────────────
-  connectWS();
 })();

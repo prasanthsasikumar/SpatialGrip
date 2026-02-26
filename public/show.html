@@ -64,15 +64,74 @@
       text-align: right;
       line-height: 1.6;
     }
+
+    /* Room code panel — floats over the 3D scene */
+    #room-panel {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      background: rgba(0,0,0,0.85);
+      padding: 36px 48px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.1);
+      transition: opacity 0.4s, transform 0.4s;
+    }
+    #room-panel.connected {
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, -50%) scale(0.95);
+    }
+    #room-panel .label {
+      font-size: 13px;
+      opacity: 0.5;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    #room-code {
+      font-size: 48px;
+      font-family: monospace;
+      letter-spacing: 0.2em;
+      color: #00ccff;
+      user-select: all;
+    }
+    #qr-code {
+      width: 180px;
+      height: 180px;
+      border-radius: 8px;
+      background: #111;
+    }
+    #room-panel .hint {
+      font-size: 12px;
+      opacity: 0.4;
+      text-align: center;
+      line-height: 1.5;
+    }
   </style>
 </head>
 <body>
 
-  <div id="status"><span class="dot"></span>Waiting for reader…</div>
+  <div id="status"><span class="dot"></span>Initialising…</div>
   <div id="hud"></div>
+
+  <!-- Room code panel -->
+  <div id="room-panel">
+    <div class="label">Room Code</div>
+    <div id="room-code">------</div>
+    <img id="qr-code" />
+    <div class="hint">Open <b>/read</b> on your phone and enter this code<br>or scan the QR code</div>
+  </div>
 
   <canvas id="three-canvas"></canvas>
   <video id="pip-video" autoplay playsinline muted></video>
+
+  <!-- PeerJS (handles signaling via free cloud server) -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 
   <!-- Three.js via CDN -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>

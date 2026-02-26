@@ -1,11 +1,11 @@
 /**
- * readerClient.js — /read page logic
+ * readerClient.js — /read page logic (PeerJS edition)
  *
- * 1. Opens a WebSocket to the signaling server (role=reader).
+ * 1. Gets room code from URL (?room=XXXX) or prompts user.
  * 2. Starts the camera and hand tracker.
- * 3. Creates a WebRTC peer connection and sends the video stream.
- * 4. Sends hand-landmark data over a DataChannel (primary)
- *    and also over the WebSocket (fallback).
+ * 3. Connects to the viewer via PeerJS (call for video, dataConnection for landmarks).
+ *
+ * No custom WebSocket server required — works on Vercel, any static host, or locally.
  */
 
 (async () => {
@@ -13,115 +13,117 @@
   const videoEl  = document.getElementById('video');
   const canvasEl = document.getElementById('overlay');
   const statusEl = document.getElementById('status');
+  const roomEl   = document.getElementById('room-input');
+  const joinBtn  = document.getElementById('join-btn');
+  const roomUI   = document.getElementById('room-ui');
 
   // ── State ───────────────────────────────────────────────────────────────
-  let ws = null;
-  let pc = null;                    // RTCPeerConnection
-  let dataChannel = null;           // RTCDataChannel for landmarks
+  let peer = null;            // PeerJS Peer instance
+  let dataConn = null;        // PeerJS DataConnection for landmarks
+  let mediaConn = null;       // PeerJS MediaConnection for video
   let lastLandmarkSend = 0;
+  let roomCode = null;
 
-  // ── 1. WebSocket to signaling server ────────────────────────────────────
-  function connectWS() {
-    ws = new WebSocket(SG_CONFIG.WS_URL_READER);
-
-    ws.onopen = () => {
-      console.log('[reader] ws connected');
-      updateStatus('Connected — waiting for viewer', true);
-    };
-
-    ws.onmessage = async (evt) => {
-      let msg;
-      try { msg = JSON.parse(evt.data); } catch { return; }
-
-      // Server tells us the viewer is connected — start the WebRTC negotiation
-      if (msg.type === 'viewer-ready') {
-        console.log('[reader] viewer is ready — starting call');
-        updateStatus('Viewer connected — negotiating…', true);
-        await startCall();
-        return;
-      }
-
-      // The viewer sent us an answer to our offer
-      if (msg.type === 'answer') {
-        console.log('[reader] received answer');
-        if (pc) await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-      }
-
-      // ICE candidate from viewer
-      if (msg.type === 'ice-candidate' && msg.candidate) {
-        try {
-          if (pc) await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-        } catch (e) {
-          console.warn('[reader] ice error', e);
-        }
-      }
-    };
-
-    ws.onerror = (err) => {
-      console.warn('[reader] ws error', err);
-    };
-
-    ws.onclose = () => {
-      console.log('[reader] ws closed — reconnecting in 2 s');
-      updateStatus('Disconnected — retrying…', false);
-      setTimeout(connectWS, 2000);
-    };
-  }
-
-  // ── 2. Get camera stream ────────────────────────────────────────────────
+  // ── 1. Get camera stream first ──────────────────────────────────────────
   let localStream;
   try {
     localStream = await navigator.mediaDevices.getUserMedia(
       SG_CONFIG.CAMERA_CONSTRAINTS,
     );
     videoEl.srcObject = localStream;
+    updateStatus('Camera ready — enter room code', true);
   } catch (err) {
     console.error('[reader] camera error:', err);
     updateStatus('Camera access denied', false);
     return;
   }
 
-  // ── 3. Create WebRTC peer connection ────────────────────────────────────
-  function createPeer() {
-    pc = new RTCPeerConnection(SG_CONFIG.RTC_CONFIG);
-
-    // Add video tracks to the connection
-    for (const track of localStream.getTracks()) {
-      pc.addTrack(track, localStream);
-    }
-
-    // DataChannel for landmark data (low-latency, ordered)
-    dataChannel = pc.createDataChannel('landmarks', {
-      ordered: true,
-      maxRetransmits: 0,
-    });
-    dataChannel.onopen = () => console.log('[reader] dataChannel open');
-    dataChannel.onclose = () => console.log('[reader] dataChannel closed');
-
-    // ICE candidates → relay through signaling
-    pc.onicecandidate = (evt) => {
-      if (evt.candidate && ws && ws.readyState === 1) {
-        ws.send(JSON.stringify({
-          type: 'ice-candidate',
-          candidate: evt.candidate,
-        }));
-      }
-    };
-
-    pc.oniceconnectionstatechange = () => {
-      console.log('[reader] ice state:', pc.iceConnectionState);
-      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
-        updateStatus('Streaming', true);
-      }
-    };
+  // ── 2. Room code handling ───────────────────────────────────────────────
+  // Check URL for ?room=XXXX (e.g. scanned QR code)
+  const urlRoom = SG_CONFIG.getRoomFromURL();
+  if (urlRoom) {
+    roomCode = urlRoom.toUpperCase();
+    roomEl.value = roomCode;
+    startConnection();
+  } else {
+    // Show the room code input and wait for user
+    roomUI.style.display = 'flex';
   }
 
-  async function startCall() {
-    createPeer();
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    ws.send(JSON.stringify({ type: 'offer', sdp: pc.localDescription }));
-    console.log('[reader] offer sent');
+  joinBtn.addEventListener('click', () => {
+    const val = roomEl.value.trim().toUpperCase();
+    if (val.length < 4) { alert('Enter the room code shown on /show'); return; }
+    roomCode = val;
+    startConnection();
+  });
+
+  roomEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') joinBtn.click();
+  });
+
+  // ── 3. Connect to viewer via PeerJS ─────────────────────────────────────
+  function startConnection() {
+    roomUI.style.display = 'none';
+    updateStatus(`Joining room ${roomCode}…`, false);
+
+    const myId     = SG_CONFIG.peerIdReader(roomCode);
+    const viewerId = SG_CONFIG.peerIdViewer(roomCode);
+
+    peer = new Peer(myId, SG_CONFIG.PEER_CONFIG);
+
+    peer.on('open', (id) => {
+      console.log('[reader] peer open:', id);
+      updateStatus(`Connected to PeerJS — calling viewer…`, true);
+
+      // ── Call the viewer with our video stream ─────────────────────────
+      mediaConn = peer.call(viewerId, localStream);
+
+      mediaConn.on('stream', () => {
+        console.log('[reader] media stream acknowledged');
+      });
+
+      mediaConn.on('close', () => {
+        console.log('[reader] media call closed');
+        updateStatus('Call ended', false);
+      });
+
+      mediaConn.on('error', (err) => {
+        console.error('[reader] media call error:', err);
+      });
+
+      // ── Open a data connection for landmarks ──────────────────────────
+      dataConn = peer.connect(viewerId, { reliable: false });
+
+      dataConn.on('open', () => {
+        console.log('[reader] data connection open');
+        updateStatus('Streaming ✓', true);
+      });
+
+      dataConn.on('close', () => {
+        console.log('[reader] data connection closed');
+      });
+
+      dataConn.on('error', (err) => {
+        console.error('[reader] data connection error:', err);
+      });
+    });
+
+    peer.on('error', (err) => {
+      console.error('[reader] peer error:', err);
+      if (err.type === 'peer-unavailable') {
+        updateStatus(`Viewer not found — is /show open with code ${roomCode}?`, false);
+      } else if (err.type === 'unavailable-id') {
+        updateStatus('Another reader is already connected with this code', false);
+      } else {
+        updateStatus(`Connection error: ${err.type}`, false);
+      }
+    });
+
+    peer.on('disconnected', () => {
+      console.log('[reader] peer disconnected — reconnecting…');
+      updateStatus('Disconnected — reconnecting…', false);
+      peer.reconnect();
+    });
   }
 
   // ── 4. Start hand tracker ──────────────────────────────────────────────
@@ -133,27 +135,20 @@
     lastLandmarkSend = now;
 
     // Compact payload: just the 21 landmarks
-    const payload = JSON.stringify({
+    const payload = {
       type: 'landmarks',
       lm: data.landmarks.map((p) => ({
         x: +p.x.toFixed(4),
         y: +p.y.toFixed(4),
         z: +p.z.toFixed(4),
       })),
-    });
+    };
 
-    // Primary: DataChannel (lowest latency)
-    if (dataChannel && dataChannel.readyState === 'open') {
-      dataChannel.send(payload);
-    }
-    // Fallback: WebSocket relay
-    else if (ws && ws.readyState === 1) {
-      ws.send(payload);
+    // Send over PeerJS DataConnection
+    if (dataConn && dataConn.open) {
+      dataConn.send(payload);
     }
   });
-
-  // ── 5. Connect signaling & wait for viewer ─────────────────────────────
-  connectWS();
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   function updateStatus(text, ok) {

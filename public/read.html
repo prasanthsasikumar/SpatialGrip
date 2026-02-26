@@ -53,6 +53,52 @@
       height: 100%;
       pointer-events: none;
     }
+
+    /* Room code input overlay */
+    #room-ui {
+      display: none;
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 20;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      background: rgba(0,0,0,0.85);
+      padding: 32px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    #room-ui label {
+      font-size: 14px;
+      opacity: 0.7;
+    }
+    #room-input {
+      font-size: 28px;
+      font-family: monospace;
+      text-align: center;
+      width: 200px;
+      padding: 8px 12px;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.05);
+      color: #fff;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+    #room-input:focus { outline: none; border-color: #00ccff; }
+    #join-btn {
+      padding: 10px 28px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      background: #00ccff;
+      color: #000;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #join-btn:active { background: #00aadd; }
+
     #info {
       position: fixed;
       bottom: 12px;
@@ -64,14 +110,24 @@
 </head>
 <body>
 
-  <div id="status"><span class="dot"></span>Connecting…</div>
+  <div id="status"><span class="dot"></span>Starting camera…</div>
 
   <div id="camera-container">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="overlay"></canvas>
   </div>
 
+  <!-- Room code input (shown when no ?room= in URL) -->
+  <div id="room-ui">
+    <label>Enter room code from /show</label>
+    <input id="room-input" type="text" maxlength="8" placeholder="ABC123" autocomplete="off" />
+    <button id="join-btn">Join</button>
+  </div>
+
   <div id="info">SpatialGrip Reader — point camera at your hand</div>
+
+  <!-- PeerJS (handles signaling via free cloud server) -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 
   <!-- MediaPipe Hands via CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.min.js"></script>
