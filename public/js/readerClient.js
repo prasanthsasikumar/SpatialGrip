@@ -127,7 +127,9 @@
     });
   }
 
-  // ── Debug hand overlay (optional, non-interfering) ─────────────────────
+  // ── Debug hand overlay + data sending ──────────────────────────────────
+  let _lastSendTime = 0;
+
   function _initHandOverlay(videoEl, canvasEl) {
     try {
       const hands = new Hands({
@@ -151,6 +153,21 @@
           for (const lm of results.multiHandLandmarks) {
             drawConnectors(drawCtx, lm, HAND_CONNECTIONS, { color: 'rgba(0,255,200,0.4)', lineWidth: 2 });
             drawLandmarks(drawCtx, lm, { color: 'rgba(0,255,200,0.8)', lineWidth: 1, radius: 3 });
+          }
+        }
+
+        // Send hand data to viewer via PeerJS
+        const now = Date.now();
+        if (dataConn && dataConn.open && results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+          if (now - _lastSendTime >= SG_CONFIG.LANDMARK_INTERVAL) {
+            _lastSendTime = now;
+            const payload = {
+              type: 'hand',
+              landmarks: results.multiHandLandmarks[0].map(p => ({ x: p.x, y: p.y, z: p.z })),
+              handedness: results.multiHandedness ? results.multiHandedness[0] : null,
+              timestamp: now,
+            };
+            dataConn.send(payload);
           }
         }
       });

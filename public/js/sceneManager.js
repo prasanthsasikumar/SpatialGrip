@@ -17,6 +17,23 @@ const SceneManager = (() => {
   let _ambientLight, _pointLight;
   let _rafId;
 
+  // Hand landmark visualisation
+  const _handSpheres = [];           // 21 small spheres for each landmark
+  const _handLines = [];             // line segments for hand connections
+  let _handGroup = null;             // group containing all hand visuals
+  let _handVisible = false;
+  let _handTimeout = null;
+
+  // MediaPipe hand connections (pairs of landmark indices)
+  const HAND_CONNECTIONS = [
+    [0,1],[1,2],[2,3],[3,4],         // thumb
+    [0,5],[5,6],[6,7],[7,8],         // index
+    [5,9],[9,10],[10,11],[11,12],    // middle
+    [9,13],[13,14],[14,15],[15,16],  // ring
+    [13,17],[17,18],[18,19],[19,20], // pinky
+    [0,17],                          // palm base
+  ];
+
   /**
    * Bootstrap the Three.js scene.
    * @param {HTMLCanvasElement} canvasEl
@@ -67,7 +84,37 @@ const SceneManager = (() => {
     const grid = new THREE.GridHelper(20, 40, 0x222222, 0x111111);
     grid.position.y = -2;
     _scene.add(grid);
+    // ── Hand landmark spheres + connection lines ──────────────────────────
+    _handGroup = new THREE.Group();
+    _handGroup.visible = false;
+    _scene.add(_handGroup);
 
+    const sphereGeo = new THREE.SphereGeometry(0.04, 8, 8);
+    const sphereMat = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
+    for (let i = 0; i < 21; i++) {
+      const sphere = new THREE.Mesh(sphereGeo, sphereMat.clone());
+      _handGroup.add(sphere);
+      _handSpheres.push(sphere);
+    }
+
+    // Finger-tip spheres get a distinct colour
+    const tipIndices = [4, 8, 12, 16, 20];
+    tipIndices.forEach(i => {
+      _handSpheres[i].material.color.set(0xff4488);
+      _handSpheres[i].scale.setScalar(1.4);
+    });
+
+    // Connection lines
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x00ffcc, opacity: 0.6, transparent: true });
+    for (const [a, b] of HAND_CONNECTIONS) {
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(), new THREE.Vector3()
+      ]);
+      const line = new THREE.Line(geo, lineMat);
+      line.userData = { a, b };
+      _handGroup.add(line);
+      _handLines.push(line);
+    }
     // ── Handle resize ─────────────────────────────────────────────────────
     window.addEventListener('resize', _onResize);
 
@@ -75,24 +122,30 @@ const SceneManager = (() => {
     _animate();
   }
 
+  // ── Accumulated object transform (persists across pinch gestures) ────
+  let _objRotY = 0;
+  let _objScale = 1.0;
+
   /**
    * Apply gesture data to the 3D object.
+   * Uses delta-based manipulation: pinch + drag to rotate / scale.
    * @param {Object} g — output of GestureInterpreter.interpret()
    */
   function applyGesture(g) {
     if (!g || !_object) return;
 
-    // Position
-    _object.position.x = g.position.x;
-    _object.position.y = g.position.y;
+    _object._hasGesture = true;
 
-    // Rotation
-    _object.rotation.x = g.rotation.x;
-    _object.rotation.y = g.rotation.y;
-    _object.rotation.z = g.rotation.z;
+    if (g.mode === 'grabbing') {
+      // Accumulate deltas
+      _objRotY  += g.rotationDelta;
+      _objScale += g.scaleDelta;
+      _objScale  = Math.max(SG_CONFIG.GESTURE.SCALE_MIN, Math.min(SG_CONFIG.GESTURE.SCALE_MAX, _objScale));
+    }
 
-    // Scale (uniform)
-    const s = g.scale;
+    // Apply accumulated transform
+    _object.rotation.y = _objRotY;
+    const s = _objScale;
     _object.scale.set(s, s, s);
 
     // Visual feedback: glow on pinch
@@ -125,6 +178,9 @@ const SceneManager = (() => {
     if (_object && !_object._hasGesture) {
       _object.rotation.y += 0.004;
       _object.rotation.x += 0.002;
+    } else if (_object && _object._hasGesture) {
+      // Keep the accumulated rotation from gestures
+      _object.rotation.y = _objRotY;
     }
 
     _renderer.render(_scene, _camera);
@@ -136,5 +192,45 @@ const SceneManager = (() => {
     _renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
-  return { init, applyGesture, getObject, setObject };
+  /**
+   * Update hand landmark positions from received data.
+   * @param {Array} landmarks — 21 normalised {x,y,z} points
+   */
+  function updateHandLandmarks(landmarks) {
+    if (!landmarks || landmarks.length < 21 || !_handGroup) return;
+
+    _handGroup.visible = true;
+    _handVisible = true;
+
+    // Map normalised [0,1] coords to world space
+    const SCALE = 8;   // spread factor
+    for (let i = 0; i < 21; i++) {
+      const lm = landmarks[i];
+      // Mirror X so it matches the user's perspective
+      _handSpheres[i].position.set(
+        -(lm.x - 0.5) * SCALE,
+        -(lm.y - 0.5) * SCALE,
+        -(lm.z || 0) * SCALE
+      );
+    }
+
+    // Update connection lines
+    for (const line of _handLines) {
+      const posA = _handSpheres[line.userData.a].position;
+      const posB = _handSpheres[line.userData.b].position;
+      const positions = line.geometry.attributes.position.array;
+      positions[0] = posA.x; positions[1] = posA.y; positions[2] = posA.z;
+      positions[3] = posB.x; positions[4] = posB.y; positions[5] = posB.z;
+      line.geometry.attributes.position.needsUpdate = true;
+    }
+
+    // Auto-hide hand after 500ms of no data
+    clearTimeout(_handTimeout);
+    _handTimeout = setTimeout(() => {
+      _handGroup.visible = false;
+      _handVisible = false;
+    }, 500);
+  }
+
+  return { init, applyGesture, getObject, setObject, updateHandLandmarks };
 })();

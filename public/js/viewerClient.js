@@ -60,11 +60,33 @@
     });
 
     conn.on('data', (data) => {
-      console.log('[viewer] received data:', data);
+      if (data.type === 'hand') {
+        // Update hand skeleton visualisation
+        SceneManager.updateHandLandmarks(data.landmarks);
+
+        // Run gesture interpretation on the landmarks
+        const gesture = GestureInterpreter.interpret(data.landmarks);
+        if (gesture) {
+          SceneManager.applyGesture(gesture);
+
+          // Update HUD with gesture state
+          if (hudEl) {
+            hudEl.innerHTML = [
+              `Mode: ${gesture.mode}`,
+              `Pinch: ${gesture.pinching ? '✊' : '✋'}  dist: ${gesture.pinchDistance.toFixed(3)}`,
+              `Rot Δ: ${gesture.rotationDelta.toFixed(4)}`,
+              `Scale Δ: ${gesture.scaleDelta.toFixed(4)}`,
+            ].join('<br>');
+          }
+        }
+      } else {
+        console.log('[viewer] received data:', data);
+      }
     });
 
     conn.on('close', () => {
       console.log('[viewer] data connection closed');
+      GestureInterpreter.reset();
       updateStatus(`Room: ${roomCode} — reader disconnected`, false);
       if (roomPanel) roomPanel.classList.remove('connected');
     });

@@ -1,54 +1,43 @@
 /**
  * gestureInterpreter.js — Converts raw hand landmarks into gesture commands
  *
- * Modular design: swap this file (or extend it) to recognise new gestures
- * without touching the rest of the pipeline.
+ * Interaction model (pinch-to-manipulate):
+ *   • Pinch (thumb + index close) = grab / activate manipulation
+ *   • While pinching, drag LEFT / RIGHT  → rotate object around Y axis
+ *   • While pinching, drag UP / DOWN      → scale object up / down
+ *   • Release pinch                       → stop manipulating, keep current state
  *
  * Public API (window.GestureInterpreter):
  *   GestureInterpreter.interpret(landmarks)
- *     → { position: {x,y}, rotation: {x,y,z}, scale: number, pinching: bool }
+ *     → { rotationDelta, scaleDelta, pinching, mode, pinchDistance }
  *
  *   GestureInterpreter.registerGesture(name, fn)
- *     → Extensibility hook: add custom gesture recognisers
+ *   GestureInterpreter.reset()
  */
 
 // eslint-disable-next-line no-unused-vars
 const GestureInterpreter = (() => {
   const G = () => SG_CONFIG.GESTURE;   // live reference so config can be hot-reloaded
 
-  // Smoothed state (exponential moving average)
-  let _smoothPos = { x: 0, y: 0 };
-  let _smoothRot = { x: 0, y: 0, z: 0 };
-  let _smoothScale = 1.0;
-  let _initialised = false;
+  // ── MediaPipe landmark indices ──────────────────────────────────────────
+  const THUMB_TIP = 4;
+  const INDEX_TIP = 8;
+  const WRIST     = 0;
+
+  // ── Pinch state machine ─────────────────────────────────────────────────
+  let _wasPinching = false;
+  let _pinchAnchor = null;          // {x, y} at pinch start (normalised)
+  let _smoothHand  = null;          // smoothed hand position
 
   // Custom gesture registry
   const _customGestures = {};
 
-  // ── MediaPipe landmark indices ──────────────────────────────────────────
-  const WRIST        = 0;
-  const THUMB_TIP    = 4;
-  const INDEX_TIP    = 8;
-  const MIDDLE_TIP   = 12;
-  const INDEX_MCP    = 5;
-  const PINKY_MCP    = 17;
-
-  /**
-   * Euclidean distance between two landmark objects {x, y, z?}
-   */
-  function dist(a, b) {
-    const dx = a.x - b.x;
-    const dy = a.y - b.y;
-    const dz = (a.z || 0) - (b.z || 0);
-    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  function dist2d(a, b) {
+    return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
   }
-
-  /**
-   * Exponential smoothing helper.
-   */
-  function smooth(prev, curr, alpha) {
-    return prev + alpha * (curr - prev);
-  }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  function smooth(prev, curr, alpha) { return prev + alpha * (curr - prev); }
 
   /**
    * Main interpretation entry point.
@@ -59,47 +48,63 @@ const GestureInterpreter = (() => {
     if (!lm || lm.length < 21) return null;
 
     const cfg = G();
+    const alpha = cfg.SMOOTHING;
 
-    // ── Position (wrist xy, normalised 0-1 → centred -1…1) ─────────────
-    const rawX = -(lm[WRIST].x - 0.5) * 2 * cfg.MOVE_SCALE;   // mirror X
-    const rawY = -(lm[WRIST].y - 0.5) * 2 * cfg.MOVE_SCALE;
-
-    // ── Rotation (palm orientation estimate) ────────────────────────────
-    // Simple heuristic: angle between INDEX_MCP → PINKY_MCP line
-    const palmDx = lm[PINKY_MCP].x - lm[INDEX_MCP].x;
-    const palmDy = lm[PINKY_MCP].y - lm[INDEX_MCP].y;
-    const rawRotZ = Math.atan2(palmDy, palmDx);                 // roll
-    const rawRotX = (lm[MIDDLE_TIP].y - lm[WRIST].y) * cfg.ROTATE_SCALE;  // pitch
-    const rawRotY = (lm[MIDDLE_TIP].x - lm[WRIST].x) * cfg.ROTATE_SCALE;  // yaw
-
-    // ── Scale (pinch distance between thumb and index) ──────────────────
-    const pinchDist = dist(lm[THUMB_TIP], lm[INDEX_TIP]);
+    // Pinch detection (thumb ↔ index distance)
+    const pinchDist = dist2d(lm[THUMB_TIP], lm[INDEX_TIP]);
     const pinching = pinchDist < cfg.PINCH_THRESHOLD;
-    // Map [0 … 0.3] → [SCALE_MIN … SCALE_MAX]
-    const rawScale = mapRange(pinchDist, 0.02, 0.25, cfg.SCALE_MIN, cfg.SCALE_MAX);
 
-    // ── Smooth everything ───────────────────────────────────────────────
-    const a = cfg.SMOOTHING;
-    if (!_initialised) {
-      _smoothPos   = { x: rawX, y: rawY };
-      _smoothRot   = { x: rawRotX, y: rawRotY, z: rawRotZ };
-      _smoothScale = rawScale;
-      _initialised = true;
+    // Use the midpoint of thumb-tip and index-tip as the "grab point"
+    const grabX = (lm[THUMB_TIP].x + lm[INDEX_TIP].x) / 2;
+    const grabY = (lm[THUMB_TIP].y + lm[INDEX_TIP].y) / 2;
+
+    // Smooth the hand position to reduce jitter
+    if (!_smoothHand) {
+      _smoothHand = { x: grabX, y: grabY };
     } else {
-      _smoothPos.x   = smooth(_smoothPos.x,   rawX,    a);
-      _smoothPos.y   = smooth(_smoothPos.y,   rawY,    a);
-      _smoothRot.x   = smooth(_smoothRot.x,   rawRotX, a);
-      _smoothRot.y   = smooth(_smoothRot.y,   rawRotY, a);
-      _smoothRot.z   = smooth(_smoothRot.z,   rawRotZ, a);
-      _smoothScale    = smooth(_smoothScale,   rawScale, a);
+      _smoothHand.x = smooth(_smoothHand.x, grabX, alpha);
+      _smoothHand.y = smooth(_smoothHand.y, grabY, alpha);
     }
 
+    let rotationDelta = 0;   // delta rotation this frame (radians)
+    let scaleDelta = 0;      // delta scale this frame
+    let mode = 'idle';       // 'idle' | 'grabbing'
+
+    if (pinching) {
+      if (!_wasPinching) {
+        // ── Just started pinching — record anchor position ──────────────
+        _pinchAnchor = { x: _smoothHand.x, y: _smoothHand.y };
+        mode = 'grabbing';
+      } else if (_pinchAnchor) {
+        // ── Ongoing pinch — compute delta from anchor ───────────────────
+        mode = 'grabbing';
+        const dx = _smoothHand.x - _pinchAnchor.x;   // normalised: -1…1
+        const dy = _smoothHand.y - _pinchAnchor.y;
+
+        // Left/right movement → rotation around Y
+        rotationDelta = -dx * cfg.ROTATE_SCALE;       // mirror so natural
+
+        // Up/down movement → scale change
+        scaleDelta = -dy * cfg.MOVE_SCALE;             // up = bigger
+
+        // Update anchor to make it incremental (continuous drag)
+        _pinchAnchor.x = _smoothHand.x;
+        _pinchAnchor.y = _smoothHand.y;
+      }
+    } else {
+      // Released — reset anchor
+      _pinchAnchor = null;
+    }
+
+    _wasPinching = pinching;
+
     const result = {
-      position: { x: _smoothPos.x, y: _smoothPos.y },
-      rotation: { x: _smoothRot.x, y: _smoothRot.y, z: _smoothRot.z },
-      scale: clamp(_smoothScale, cfg.SCALE_MIN, cfg.SCALE_MAX),
+      rotationDelta,
+      scaleDelta,
       pinching,
+      mode,
       pinchDistance: pinchDist,
+      handPosition: { x: _smoothHand.x, y: _smoothHand.y },
     };
 
     // Run any registered custom gesture recognisers
@@ -110,20 +115,21 @@ const GestureInterpreter = (() => {
     return result;
   }
 
-  // ── Helpers ─────────────────────────────────────────────────────────────
-  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
-  function mapRange(v, inMin, inMax, outMin, outMax) {
-    const t = clamp((v - inMin) / (inMax - inMin), 0, 1);
-    return outMin + t * (outMax - outMin);
+  /**
+   * Reset internal state (e.g. on disconnect).
+   */
+  function reset() {
+    _wasPinching = false;
+    _pinchAnchor = null;
+    _smoothHand  = null;
   }
 
   /**
    * Register a custom gesture. `fn(landmarks, currentResult) → value`
-   * The value will be added to the result object under `name`.
    */
   function registerGesture(name, fn) {
     _customGestures[name] = fn;
   }
 
-  return { interpret, registerGesture };
+  return { interpret, registerGesture, reset };
 })();
