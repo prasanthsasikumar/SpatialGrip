@@ -2,7 +2,7 @@
 
 **Stream your phone's camera to a laptop browser and manipulate 3D objects with hand gestures — in real time.**
 
-> Part of the [SpatialLens](https://spatiallens.flowsxr.com) project by FlowsXR.
+Part of the SpatialGrip project by FlowsXR. Live at **[spatialgrip.flowsxr.com](https://spatialgrip.flowsxr.com)**.
 
 ---
 
@@ -10,10 +10,9 @@
 
 | Phone (`/read`) | Laptop (`/show`) |
 |---|---|
-| Opens rear camera | Displays live video (PiP) |
-| Runs MediaPipe hand tracking | Renders 3D scene (Three.js) |
-| Sends video via WebRTC | Maps gestures → move / rotate / scale |
-| Sends landmarks via DataChannel | Pinch glow feedback on object |
+| Opens rear camera | Renders 3D scene (Three.js) |
+| Runs MediaPipe hand tracking locally | Receives landmark data via Socket.IO |
+| Sends landmarks to server relay | Maps gestures → move / rotate / scale |
 
 ### Gesture Mapping
 
@@ -48,13 +47,12 @@ Both devices must be on the same Wi-Fi network.
 ## Project Structure
 
 ```
-SpatialLens/
-├── server.js                     # Express + WebSocket signaling server
+SpatialGrip/
+├── server.js                     # Express + Socket.IO relay server
 ├── package.json
-├── vercel.json                   # Vercel deployment config
-├── api/
-│   └── index.js                  # Serverless function entry point
+├── render.yaml                   # Render deployment config
 └── public/
+    ├── index.html                # Landing page
     ├── read.html                 # Phone / wearable camera page
     ├── show.html                 # Laptop 3D viewer page
     └── js/
@@ -62,54 +60,44 @@ SpatialLens/
         ├── handTracker.js        # Pluggable MediaPipe wrapper
         ├── gestureInterpreter.js # Landmarks → gesture commands
         ├── sceneManager.js       # Three.js scene management
-        ├── readerClient.js       # /read WebRTC + landmark sender
-        └── viewerClient.js       # /show WebRTC + gesture consumer
+        ├── readerClient.js       # /read — camera + landmark sender
+        └── viewerClient.js       # /show — gesture consumer + 3D viewer
 ```
 
 ---
 
 ## Deployment
 
-### Vercel (static hosting + serverless)
+This app is deployed on **[Render](https://render.com)** — it requires a persistent WebSocket connection (Socket.IO) which serverless platforms like Vercel do not support.
 
-This project is configured for Vercel with `vercel.json` and `api/index.js`.
+Live URL: **https://spatialgrip.flowsxr.com**
 
-```bash
-npm i -g vercel
-vercel --prod
+### Deploy Your Own
+
+1. Fork this repo
+2. Go to [render.com](https://render.com) → **New** → **Web Service**
+3. Connect your GitHub repo — Render auto-detects `render.yaml`
+4. Click **Deploy**
+
+The `render.yaml` in this repo handles everything:
+
+```yaml
+services:
+  - type: web
+    name: spatialgrip
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server.js
 ```
 
-**⚠️ Important: WebSocket Limitation**
-
-Vercel's serverless functions **do not support persistent WebSocket connections**. The WebRTC signaling handshake requires WebSockets to exchange offer/answer/ICE messages between devices.
-
-**Options for production:**
-
-| Approach | Pros | Cons |
-|---|---|---|
-| **Vercel + external signaling** | Free static hosting, scalable | Need a separate signaling server |
-| **Railway / Render / Fly.io** | Full WebSocket support, one deploy | Small monthly cost (free tiers available) |
-| **Vercel + Ably/Pusher** | Managed signaling, no server | Adds a third-party dependency |
-
-For the simplest path, deploy the full app (Express + WS) to **[Railway](https://railway.app)** or **[Render](https://render.com)** which support WebSockets natively, then point your custom domain there.
-
-If you want Vercel specifically for `spatiallens.flowsxr.com`, the static pages will serve correctly — you just need to point your signaling WebSocket URL to a separate always-on server.
-
-### Custom Domain Setup (Vercel)
-
-1. Add `spatiallens.flowsxr.com` in Vercel Dashboard → Project → Settings → Domains
-2. Add a CNAME record in your DNS provider:
-   - **Host:** `spatiallens`
-   - **Value:** `cname.vercel-dns.com`
-3. Wait for DNS propagation and SSL provisioning
+> **Free tier note:** Render free spins down after 15 min of inactivity. First request after idle takes ~30 seconds to cold-start.
 
 ---
 
 ## Tech Stack
 
 - **[Express.js](https://expressjs.com/)** — HTTP server & static file serving
-- **[ws](https://github.com/websockets/ws)** — WebSocket signaling server
-- **[WebRTC](https://webrtc.org/)** — Peer-to-peer video streaming
+- **[Socket.IO](https://socket.io/)** — WebSocket relay between phone and laptop
 - **[MediaPipe Hands](https://google.github.io/mediapipe/solutions/hands)** — Real-time hand landmark detection
 - **[Three.js](https://threejs.org/)** — 3D rendering engine
 
@@ -129,14 +117,13 @@ HandTracker.init(videoElement, canvasElement, onLandmarksCallback)
 
 ```js
 GestureInterpreter.registerGesture('fist', (landmarks, currentResult) => {
-  // return true/false or a value
   return allFingersCurled(landmarks);
 });
 ```
 
 ### Enable Depth Estimation
 
-Set `SG_CONFIG.DEPTH_ENABLED = true` in `config.js` and wire a depth model (e.g. MiDaS via TensorFlow.js) into the `handTracker.js` frame loop. The `depth` message type is already plumbed through the signaling server.
+Set `SG_CONFIG.DEPTH_ENABLED = true` in `config.js` and wire a depth model (e.g. MiDaS via TensorFlow.js) into the `handTracker.js` frame loop.
 
 ### Replace 3D Object
 
