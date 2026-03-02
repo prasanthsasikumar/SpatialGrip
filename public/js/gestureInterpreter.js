@@ -82,7 +82,7 @@ const GestureInterpreter = (() => {
         const dy = _smoothHand.y - _pinchAnchor.y;
 
         // Left/right movement → rotation around Y
-        rotationDelta = -dx * cfg.ROTATE_SCALE;       // mirror so natural
+        rotationDelta = dx * cfg.ROTATE_SCALE;        // rear cam: no mirror needed
 
         // Up/down movement → scale change
         scaleDelta = -dy * cfg.MOVE_SCALE;             // up = bigger

@@ -206,9 +206,9 @@ const SceneManager = (() => {
     const SCALE = 8;   // spread factor
     for (let i = 0; i < 21; i++) {
       const lm = landmarks[i];
-      // Mirror X so it matches the user's perspective
+      // Rear camera: x increases left→right from the user's POV — no mirror needed
       _handSpheres[i].position.set(
-        -(lm.x - 0.5) * SCALE,
+        (lm.x - 0.5) * SCALE,
         -(lm.y - 0.5) * SCALE,
         -(lm.z || 0) * SCALE
       );
