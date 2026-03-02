@@ -148,21 +148,27 @@ const SceneManager = (() => {
     const s = _objScale;
     _object.scale.set(s, s, s);
 
-    // Visual feedback: glow on pinch
-    if (_object.material) {
-      _object.material.emissive = g.pinching
-        ? new THREE.Color(0xff4400)
-        : new THREE.Color(0x000000);
-      _object.material.emissiveIntensity = g.pinching ? 0.6 : 0;
-    }
+    // Visual feedback: glow on pinch (works for both plain meshes and GLB groups)
+    const emissiveColor = g.pinching ? new THREE.Color(0xff4400) : new THREE.Color(0x000000);
+    const emissiveIntensity = g.pinching ? 0.6 : 0;
+    _object.traverse((child) => {
+      if (child.isMesh && child.material) {
+        child.material.emissive          = emissiveColor;
+        child.material.emissiveIntensity = emissiveIntensity;
+      }
+    });
   }
 
   /**
    * Replace the interactive object with a custom mesh.
+   * Resets accumulated gesture state so the new object starts neutral.
    */
   function setObject(mesh) {
     if (_object) _scene.remove(_object);
     _object = mesh;
+    _object._hasGesture = false;
+    _objRotY  = 0;
+    _objScale = 1.0;
     _scene.add(_object);
   }
 
@@ -234,3 +240,6 @@ const SceneManager = (() => {
 
   return { init, applyGesture, getObject, setObject, updateHandLandmarks };
 })();
+
+// Expose to ES-module scripts (e.g. GLB uploader in show.html)
+window.SceneManager = SceneManager;

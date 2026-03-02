@@ -98,6 +98,44 @@
       text-align: center;
       line-height: 1.5;
     }
+
+    /* GLB upload button */
+    #upload-btn {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0, 0, 0, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+      padding: 10px 20px;
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    #upload-btn:hover {
+      background: rgba(0, 204, 255, 0.15);
+      border-color: #00ccff;
+    }
+    #upload-btn svg { flex-shrink: 0; }
+    #glb-input { display: none; }
+
+    #upload-label {
+      position: fixed;
+      bottom: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+      font-size: 11px;
+      opacity: 0.4;
+      pointer-events: none;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -115,10 +153,32 @@
 
   <canvas id="three-canvas"></canvas>
 
+  <!-- GLB upload control -->
+  <input type="file" id="glb-input" accept=".glb,.gltf" />
+  <label for="glb-input" id="upload-btn">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="17 8 12 3 7 8"/>
+      <line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+    Upload GLB Model
+  </label>
+  <div id="upload-label">replace the cube with your own 3D model</div>
+
   <!-- Socket.IO client (auto-served by the server) -->
   <script src="/socket.io/socket.io.js"></script>
 
-  <!-- Three.js via CDN -->
+  <!-- Import map: lets GLTFLoader (ES module) resolve bare "three" specifier -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <!-- Three.js via CDN (classic global for non-module app scripts) -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 
   <!-- App modules -->
@@ -126,6 +186,60 @@
   <script src="/js/gestureInterpreter.js"></script>
   <script src="/js/sceneManager.js"></script>
   <script src="/js/viewerClient.js"></script>
+
+  <!-- GLB loader (ES module) -->
+  <script type="module">
+    import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+
+    const loader = new GLTFLoader();
+    const input  = document.getElementById('glb-input');
+    const btn    = document.getElementById('upload-btn');
+    const hint   = document.getElementById('upload-label');
+
+    input.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      btn.textContent = 'Loading…';
+      btn.style.pointerEvents = 'none';
+
+      const url = URL.createObjectURL(file);
+      loader.load(
+        url,
+        (gltf) => {
+          const model = gltf.scene;
+
+          // Centre + fit the model into a ~2-unit bounding sphere
+          const box = new THREE.Box3().setFromObject(model);
+          const centre = box.getCenter(new THREE.Vector3());
+          const size   = box.getSize(new THREE.Vector3()).length();
+          model.position.sub(centre);          // centre at origin
+          const scale = 2.4 / size;
+          model.scale.setScalar(scale);
+
+          window.SceneManager.setObject(model);
+          URL.revokeObjectURL(url);
+
+          // Update button to show filename
+          const name = file.name.length > 24
+            ? file.name.slice(0, 21) + '…'
+            : file.name;
+          btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>${name}`;
+          btn.style.pointerEvents = '';
+          hint.textContent = 'rotate with pinch gesture · upload again to swap';
+        },
+        undefined,
+        (err) => {
+          console.error('GLB load error', err);
+          btn.textContent = 'Upload failed — try again';
+          btn.style.pointerEvents = '';
+        }
+      );
+
+      // Reset so the same file can be re-selected
+      input.value = '';
+    });
+  </script>
 
 </body>
 </html>
