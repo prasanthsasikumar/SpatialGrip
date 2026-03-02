@@ -1,12 +1,9 @@
 /**
- * readerClient.js — /read page logic
+ * readerClient.js — /read page logic (Socket.IO version)
  *
- * Architecture (v4 — data-only):
  * 1. Gets room code from URL (?room=XXXX) or prompts user.
  * 2. Starts the camera, runs hand tracking locally.
- * 3. Sends hand-tracking data to the viewer via PeerJS data connection.
- *
- * NO video is sent to the viewer.
+ * 3. Sends hand-tracking data to the viewer via Socket.IO (server relay).
  */
 
 (async () => {
@@ -19,14 +16,14 @@
   const roomUI   = document.getElementById('room-ui');
 
   // ── State ───────────────────────────────────────────────────────────────
-  let peer = null;
-  let dataConn = null;
+  let socket = null;
   let roomCode = null;
-  let cameraStream = null;
+  let connected = false;
 
   // ── 1. Start camera (needed for local hand tracking) ───────────────────
   updateStatus('Starting camera…', false);
 
+  let cameraStream;
   try {
     cameraStream = await navigator.mediaDevices.getUserMedia(
       SG_CONFIG.CAMERA_CONSTRAINTS,
@@ -49,7 +46,7 @@
     return;
   }
 
-  // Optional: debug hand overlay on the reader side
+  // Start hand tracking overlay + data sending
   _initHandOverlay(videoEl, canvasEl);
 
   // ── 2. Room code handling ───────────────────────────────────────────────
@@ -57,7 +54,7 @@
   if (urlRoom) {
     roomCode = urlRoom.toUpperCase();
     roomEl.value = roomCode;
-    startConnection();
+    joinRoom();
   } else {
     roomUI.style.display = 'flex';
   }
@@ -66,68 +63,61 @@
     const val = roomEl.value.trim().toUpperCase();
     if (val.length < 4) { alert('Enter the room code shown on /show'); return; }
     roomCode = val;
-    startConnection();
+    joinRoom();
   });
 
   roomEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') joinBtn.click();
   });
 
-  // ── 3. Connect to viewer — data connection only (no video) ─────────────
-  function startConnection() {
+  // ── 3. Connect via Socket.IO and join room ─────────────────────────────
+  function joinRoom() {
     roomUI.style.display = 'none';
     updateStatus(`Joining room ${roomCode}…`, false);
 
-    const myId     = SG_CONFIG.peerIdReader(roomCode);
-    const viewerId = SG_CONFIG.peerIdViewer(roomCode);
+    // Connect to the same origin that served this page
+    socket = io({ transports: ['websocket', 'polling'] });
 
-    peer = new Peer(myId, SG_CONFIG.PEER_CONFIG);
+    socket.on('connect', () => {
+      console.log('[reader] socket connected:', socket.id);
 
-    peer.on('open', (id) => {
-      console.log('[reader] peer open:', id);
-
-      // Open a data connection to the viewer (no video stream)
-      console.log('[reader] connecting data channel to viewer:', viewerId);
-      dataConn = peer.connect(viewerId, { reliable: true });
-
-      dataConn.on('open', () => {
-        console.log('[reader] data connection open');
-        updateStatus('Connected ✓', true);
-
-        // Send a hello message to confirm the channel works
-        dataConn.send({ type: 'hello', message: 'hello' });
-        console.log('[reader] sent hello');
-      });
-
-      dataConn.on('close', () => {
-        console.log('[reader] data connection closed');
-        updateStatus('Disconnected', false);
-      });
-
-      dataConn.on('error', (err) => {
-        console.error('[reader] data connection error:', err);
+      // Join the room created by the viewer
+      socket.emit('join-room', roomCode, (resp) => {
+        if (resp && resp.ok) {
+          console.log('[reader] joined room', roomCode);
+          connected = true;
+          updateStatus('Connected ✓', true);
+        } else {
+          console.error('[reader] join failed:', resp);
+          updateStatus(`Room "${roomCode}" not found — is /show open?`, false);
+        }
       });
     });
 
-    peer.on('error', (err) => {
-      console.error('[reader] peer error:', err);
-      if (err.type === 'peer-unavailable') {
-        updateStatus(`Viewer not found — is /show open with code ${roomCode}?`, false);
-      } else if (err.type === 'unavailable-id') {
-        updateStatus('Another reader already connected with this code', false);
-      } else {
-        updateStatus(`Error: ${err.type}`, false);
-      }
+    socket.on('disconnect', (reason) => {
+      console.log('[reader] socket disconnected:', reason);
+      connected = false;
+      updateStatus('Disconnected — reconnecting…', false);
     });
 
-    peer.on('disconnected', () => {
-      console.log('[reader] disconnected — reconnecting…');
-      updateStatus('Reconnecting…', false);
-      peer.reconnect();
+    socket.on('reconnect', () => {
+      console.log('[reader] reconnected — re-joining room');
+      socket.emit('join-room', roomCode, (resp) => {
+        if (resp && resp.ok) {
+          connected = true;
+          updateStatus('Connected ✓', true);
+        }
+      });
+    });
+
+    socket.on('room-closed', () => {
+      console.log('[reader] room closed by viewer');
+      connected = false;
+      updateStatus('Viewer disconnected — room closed', false);
     });
   }
 
-  // ── Debug hand overlay + data sending ──────────────────────────────────
+  // ── Hand tracking overlay + data sending ───────────────────────────────
   let _lastSendTime = 0;
 
   function _initHandOverlay(videoEl, canvasEl) {
@@ -142,8 +132,11 @@
         minDetectionConfidence: SG_CONFIG.HAND_TRACKING.minDetectionConfidence,
         minTrackingConfidence: SG_CONFIG.HAND_TRACKING.minTrackingConfidence,
       });
+
       const drawCtx = canvasEl.getContext('2d');
+
       hands.onResults((results) => {
+        // Draw debug overlay
         const w = canvasEl.clientWidth;
         const h = canvasEl.clientHeight;
         canvasEl.width = w;
@@ -156,24 +149,27 @@
           }
         }
 
-        // Send hand data to viewer via PeerJS
+        // Send hand data to viewer via Socket.IO
         const now = Date.now();
-        if (dataConn && dataConn.open && results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        if (socket && connected && results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
           if (now - _lastSendTime >= SG_CONFIG.LANDMARK_INTERVAL) {
             _lastSendTime = now;
-            const payload = {
-              type: 'hand',
+            socket.volatile.emit('hand', {
               landmarks: results.multiHandLandmarks[0].map(p => ({ x: p.x, y: p.y, z: p.z })),
               handedness: results.multiHandedness ? results.multiHandedness[0] : null,
               timestamp: now,
-            };
-            dataConn.send(payload);
+            });
           }
         }
       });
+
+      // Frame loop — feed video frames to MediaPipe
+      let _busy = false;
       async function loop() {
-        if (videoEl.readyState >= 2) {
-          try { await hands.send({ image: videoEl }); } catch (_) {}
+        if (!_busy && videoEl.readyState >= 2) {
+          _busy = true;
+          try { await hands.send({ image: videoEl }); } catch (e) { console.error('[reader] frame error:', e); }
+          _busy = false;
         }
         requestAnimationFrame(loop);
       }

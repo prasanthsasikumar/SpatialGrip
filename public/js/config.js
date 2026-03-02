@@ -1,15 +1,13 @@
 /**
  * config.js — Shared constants for SpatialGrip
  *
- * Works in both local (node server.js) and hosted (Vercel) modes.
- * Signaling uses PeerJS cloud — no WebSocket server required.
+ * Signaling + data relay uses Socket.IO (server-mediated).
  */
 
 // eslint-disable-next-line no-unused-vars
 const SG_CONFIG = (() => {
   /**
    * Generate a short alphanumeric room code.
-   * Used as a PeerJS ID prefix so reader + viewer find each other.
    */
   function generateRoomCode(len = 6) {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous 0/O/1/I
@@ -31,25 +29,6 @@ const SG_CONFIG = (() => {
     // ── Room helpers ────────────────────────────────────────────────────
     generateRoomCode,
     getRoomFromURL,
-
-    // ── PeerJS ──────────────────────────────────────────────────────────
-    // Uses the free PeerJS cloud signaling server (0.peerjs.com)
-    // No custom WebSocket server needed — works on Vercel, GitHub Pages, etc.
-    PEER_CONFIG: {
-      debug: 1,   // 0 = none, 1 = errors, 2 = warnings, 3 = all
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-        ],
-      },
-    },
-
-    // PeerJS peer ID conventions:
-    //   Viewer:  "sg-<ROOM>-viewer"
-    //   Reader:  "sg-<ROOM>-reader"
-    peerIdViewer: (room) => `sg-${room}-viewer`,
-    peerIdReader: (room) => `sg-${room}-reader`,
 
     // ── Camera constraints (rear camera preferred) ──────────────────────
     CAMERA_CONSTRAINTS: {

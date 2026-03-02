@@ -1,13 +1,10 @@
 /**
- * viewerClient.js — /show page logic
+ * viewerClient.js — /show page logic (Socket.IO version)
  *
- * Architecture (v4 — data-only):
- * 1. Generates a room code and registers as a PeerJS peer.
+ * 1. Generates a room code and creates a Socket.IO room.
  * 2. Displays the code + QR so the phone can connect.
- * 3. Receives hand-tracking DATA from /read via PeerJS data connection.
+ * 3. Receives hand-tracking data from /read via Socket.IO.
  * 4. Feeds data through GestureInterpreter → SceneManager.
- *
- * NO video is received — hand tracking runs on the reader side.
  */
 
 (() => {
@@ -19,15 +16,11 @@
   const roomPanel   = document.getElementById('room-panel');
   const qrEl        = document.getElementById('qr-code');
 
-  // ── State ───────────────────────────────────────────────────────────────
-  let peer = null;
-
   // ── 1. Initialise Three.js scene ────────────────────────────────────────
   SceneManager.init(canvasEl);
 
-  // ── 2. Generate room code + register PeerJS ─────────────────────────────
+  // ── 2. Generate room code + connect Socket.IO ───────────────────────────
   const roomCode = SG_CONFIG.getRoomFromURL() || SG_CONFIG.generateRoomCode();
-  const myId = SG_CONFIG.peerIdViewer(roomCode);
 
   roomCodeEl.textContent = roomCode;
 
@@ -39,74 +32,79 @@
     qrEl.title = joinURL;
   }
 
-  updateStatus(`Room: ${roomCode} — waiting for reader…`, false);
+  updateStatus(`Room: ${roomCode} — connecting…`, false);
 
-  peer = new Peer(myId, SG_CONFIG.PEER_CONFIG);
+  const socket = io({ transports: ['websocket', 'polling'] });
 
-  peer.on('open', (id) => {
-    console.log('[viewer] peer open:', id);
-    updateStatus(`Room: ${roomCode} — scan QR or enter code on phone`, false);
-  });
+  socket.on('connect', () => {
+    console.log('[viewer] socket connected:', socket.id);
 
-  // ── 3. Receive data connection from reader ──────────────────────────────
-  peer.on('connection', (conn) => {
-    console.log('[viewer] incoming data connection from reader');
-    updateStatus('Reader connecting…', false);
-
-    conn.on('open', () => {
-      console.log('[viewer] data connection open');
-      if (roomPanel) roomPanel.classList.add('connected');
-      updateStatus('Connected ✓', true);
-    });
-
-    conn.on('data', (data) => {
-      if (data.type === 'hand') {
-        // Update hand skeleton visualisation
-        SceneManager.updateHandLandmarks(data.landmarks);
-
-        // Run gesture interpretation on the landmarks
-        const gesture = GestureInterpreter.interpret(data.landmarks);
-        if (gesture) {
-          SceneManager.applyGesture(gesture);
-
-          // Update HUD with gesture state
-          if (hudEl) {
-            hudEl.innerHTML = [
-              `Mode: ${gesture.mode}`,
-              `Pinch: ${gesture.pinching ? '✊' : '✋'}  dist: ${gesture.pinchDistance.toFixed(3)}`,
-              `Rot Δ: ${gesture.rotationDelta.toFixed(4)}`,
-              `Scale Δ: ${gesture.scaleDelta.toFixed(4)}`,
-            ].join('<br>');
-          }
-        }
+    // Create the room on the server
+    socket.emit('create-room', roomCode, (resp) => {
+      if (resp && resp.ok) {
+        console.log('[viewer] room created:', roomCode);
+        updateStatus(`Room: ${roomCode} — scan QR or enter code on phone`, false);
       } else {
-        console.log('[viewer] received data:', data);
+        console.error('[viewer] room create failed:', resp);
+        updateStatus('Failed to create room', false);
       }
     });
-
-    conn.on('close', () => {
-      console.log('[viewer] data connection closed');
-      GestureInterpreter.reset();
-      updateStatus(`Room: ${roomCode} — reader disconnected`, false);
-      if (roomPanel) roomPanel.classList.remove('connected');
-    });
-
-    conn.on('error', (err) => console.error('[viewer] data connection error:', err));
   });
 
-  peer.on('error', (err) => {
-    console.error('[viewer] peer error:', err);
-    if (err.type === 'unavailable-id') {
-      updateStatus('Another viewer already has this room code — refresh to get a new one', false);
-    } else {
-      updateStatus(`Error: ${err.type}`, false);
+  // ── 3. Receive hand data from reader ────────────────────────────────────
+  let _msgCount = 0;
+
+  socket.on('hand', (data) => {
+    _msgCount++;
+
+    // Update hand skeleton visualisation
+    SceneManager.updateHandLandmarks(data.landmarks);
+
+    // Run gesture interpretation on the landmarks
+    const gesture = GestureInterpreter.interpret(data.landmarks);
+    if (gesture) {
+      SceneManager.applyGesture(gesture);
+
+      // Update HUD with gesture state
+      if (hudEl) {
+        hudEl.innerHTML = [
+          `Mode: ${gesture.mode}`,
+          `Pinch: ${gesture.pinching ? '✊' : '✋'}  dist: ${gesture.pinchDistance.toFixed(3)}`,
+          `Rot Δ: ${gesture.rotationDelta.toFixed(4)}`,
+          `Scale Δ: ${gesture.scaleDelta.toFixed(4)}`,
+          `Msgs: ${_msgCount}`,
+        ].join('<br>');
+      }
     }
   });
 
-  peer.on('disconnected', () => {
-    console.log('[viewer] peer disconnected — reconnecting…');
-    updateStatus('Reconnecting…', false);
-    peer.reconnect();
+  // ── 4. Reader connect / disconnect events ───────────────────────────────
+  socket.on('reader-connected', ({ id }) => {
+    console.log('[viewer] reader connected:', id);
+    if (roomPanel) roomPanel.classList.add('connected');
+    updateStatus('Connected ✓', true);
+  });
+
+  socket.on('reader-disconnected', ({ id }) => {
+    console.log('[viewer] reader disconnected:', id);
+    GestureInterpreter.reset();
+    updateStatus(`Room: ${roomCode} — reader disconnected`, false);
+    if (roomPanel) roomPanel.classList.remove('connected');
+  });
+
+  socket.on('disconnect', (reason) => {
+    console.log('[viewer] socket disconnected:', reason);
+    updateStatus('Disconnected — reconnecting…', false);
+    if (roomPanel) roomPanel.classList.remove('connected');
+  });
+
+  socket.on('reconnect', () => {
+    console.log('[viewer] reconnected — re-creating room');
+    socket.emit('create-room', roomCode, (resp) => {
+      if (resp && resp.ok) {
+        updateStatus(`Room: ${roomCode} — waiting for reader…`, false);
+      }
+    });
   });
 
   // ── Helpers ────────────────────────────────────────────────────────────
