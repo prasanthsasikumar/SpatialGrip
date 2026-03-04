@@ -10,6 +10,8 @@ node_modules/
 logs/
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # OS files
 .DS_Store
@@ -28,3 +30,26 @@ Desktop.ini
 # Build output
 dist/
 build/
+out/
+release/
+
+# Desktop app (Electron) artifacts
+desktop-app/dist/
+desktop-app/build/
+desktop-app/out/
+desktop-app/release/
+desktop-app/*.dmg
+desktop-app/*.exe
+desktop-app/*.AppImage
+desktop-app/*.deb
+desktop-app/*.rpm
+desktop-app/*.zip
+desktop-app/*.tar.gz
+
+# Electron cache
+.electron/
+.cache/
+
+# Chrome extension builds
+chrome-extension/*.zip
+chrome-extension/dist/

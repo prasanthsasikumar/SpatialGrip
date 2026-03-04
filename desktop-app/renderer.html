@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpatialGrip Desktop</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      color: #fff;
+      padding: 24px;
+      overflow-y: auto;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .header p {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 13px;
+    }
+
+    .room-display {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 16px;
+      padding: 20px;
+      text-align: center;
+      margin-bottom: 20px;
+      backdrop-filter: blur(10px);
+    }
+
+    .room-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: rgba(255, 255, 255, 0.7);
+      margin-bottom: 8px;
+    }
+
+    .room-code {
+      font-size: 42px;
+      font-weight: 700;
+      font-family: 'Monaco', 'Courier New', monospace;
+      color: #00ccff;
+      margin-bottom: 16px;
+      cursor: pointer;
+      user-select: all;
+      transition: color 0.2s;
+    }
+
+    .room-code:hover {
+      color: #00ffff;
+    }
+
+    .qr-container {
+      margin: 16px 0;
+    }
+
+    .qr-container img {
+      width: 200px;
+      height: 200px;
+      border-radius: 12px;
+      background: white;
+      padding: 10px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    .scan-hint {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.6);
+      margin-top: 12px;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      font-size: 15px;
+      font-weight: 600;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 12px;
+    }
+
+    #start-btn {
+      background: #00cc88;
+      color: white;
+    }
+
+    #start-btn:hover {
+      background: #00dd99;
+      transform: translateY(-1px);
+    }
+
+    #start-btn.active {
+      background: #ff4444;
+    }
+
+    #start-btn.active:hover {
+      background: #ff5555;
+    }
+
+    #regenerate-btn {
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      font-size: 14px;
+      padding: 10px;
+    }
+
+    #regenerate-btn:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    #regenerate-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .status {
+      text-align: center;
+      font-size: 13px;
+      padding: 10px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .status.connected {
+      background: rgba(0, 200, 100, 0.2);
+      border: 1px solid rgba(0, 255, 128, 0.3);
+    }
+
+    .status .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.5);
+      display: inline-block;
+      animation: pulse 2s infinite;
+    }
+
+    .status.connected .dot {
+      background: #00ff88;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .settings {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .settings-toggle {
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      user-select: none;
+      transition: opacity 0.2s;
+    }
+
+    .settings-toggle:hover {
+      opacity: 0.8;
+    }
+
+    .settings-content {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+    }
+
+    .settings-content.visible {
+      max-height: 300px;
+      margin-top: 16px;
+    }
+
+    .settings-content label {
+      display: block;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: rgba(255, 255, 255, 0.7);
+      margin-bottom: 6px;
+    }
+
+    .settings-content input[type="text"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      font-size: 13px;
+      font-family: inherit;
+    }
+
+    .settings-content input[type="text"]:focus {
+      outline: none;
+      border-color: #00ccff;
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      margin-top: 12px;
+    }
+
+    .checkbox-label input[type="checkbox"] {
+      cursor: pointer;
+      width: 16px;
+      height: 16px;
+    }
+
+    .gestures {
+      text-align: center;
+      font-size: 13px;
+      line-height: 1.6;
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    .gestures b {
+      color: #00ccff;
+    }
+
+    .gestures i {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>✋ SpatialGrip Desktop</h1>
+    <p>Control any presentation with hand gestures</p>
+  </div>
+
+  <div class="room-display">
+    <div class="room-label">Room Code</div>
+    <div class="room-code" id="room-code" title="Click to copy">------</div>
+    <div class="qr-container">
+      <img id="qr-code" alt="QR Code" />
+    </div>
+    <div class="scan-hint">Scan with your phone to connect</div>
+  </div>
+
+  <button id="start-btn">Start Listening</button>
+  <button id="regenerate-btn">🔄 Generate New Room Code</button>
+
+  <div class="status" id="status">
+    <span class="dot"></span> Not connected
+  </div>
+
+  <div class="settings">
+    <div class="settings-toggle" id="settings-toggle">⚙️ Settings</div>
+    <div class="settings-content" id="settings-content">
+      <label>Server URL</label>
+      <input type="text" id="server-url" value="https://spatialgrip.flowsxr.com" />
+      
+      <label class="checkbox-label">
+        <input type="checkbox" id="swap-hands">
+        <span>Swap hands (Left→Next, Right→Prev)</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="gestures">
+    <b><span id="right-action">Right hand: tap</span></b> → <span id="right-label">Next slide</span><br>
+    <b><span id="left-action">Left hand: tap</span></b> → <span id="left-label">Previous slide</span><br>
+    <br>
+    <i>Tap = pinch (thumb + index) then release</i><br>
+    <i>Wait 0.5s between taps for clean detection</i>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

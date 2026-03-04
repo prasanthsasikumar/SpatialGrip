@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "SpatialGrip — Gesture Slide Control",
+  "version": "1.0.0",
+  "description": "Control Google Slides, PowerPoint Online and other presentations with hand gestures via SpatialGrip.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://spatialgrip.flowsxr.com/*",
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "SpatialGrip"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://docs.google.com/presentation/*",
+        "https://*.officeapps.live.com/*",
+        "https://www.canva.com/design/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "icons": {}
+}

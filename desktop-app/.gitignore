@@ -1,0 +1,21 @@
+node_modules/
+dist/
+build/
+out/
+release/
+*.log
+.DS_Store
+.env
+
+# Electron builder output
+*.dmg
+*.exe
+*.AppImage
+*.deb
+*.rpm
+*.zip
+*.tar.gz
+
+# Electron cache
+.electron/
+.cache/

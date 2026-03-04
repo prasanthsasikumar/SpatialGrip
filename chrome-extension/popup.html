@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 400px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0d0d0d;
+      color: #eee;
+      padding: 24px;
+    }
+    h1 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #00ccff;
+      text-align: center;
+    }
+    .subtitle {
+      font-size: 11px;
+      opacity: 0.5;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .room-display {
+      background: #1a1a1a;
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      margin-bottom: 16px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .room-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      opacity: 0.5;
+      margin-bottom: 8px;
+    }
+    .room-code {
+      font-size: 42px;
+      font-family: monospace;
+      letter-spacing: 0.3em;
+      color: #00ccff;
+      font-weight: 700;
+      margin-bottom: 16px;
+      user-select: all;
+      cursor: pointer;
+    }
+    .room-code:hover {
+      color: #33ddff;
+    }
+    #qr-code {
+      width: 180px;
+      height: 180px;
+      margin: 0 auto 12px;
+      border-radius: 8px;
+      background: #fff;
+      display: block;
+    }
+    .scan-hint {
+      font-size: 11px;
+      opacity: 0.6;
+      line-height: 1.4;
+    }
+
+    .settings {
+      margin-bottom: 16px;
+    }
+    .settings-toggle {
+      font-size: 11px;
+      opacity: 0.5;
+      cursor: pointer;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .settings-toggle:hover { opacity: 0.8; }
+    .settings-content {
+      display: none;
+    }
+    .settings-content.visible { display: block; }
+
+    label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      opacity: 0.6;
+      display: block;
+      margin-bottom: 4px;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      background: #1a1a1a;
+      color: #fff;
+      font-size: 12px;
+      font-family: monospace;
+      outline: none;
+      margin-bottom: 12px;
+    }
+    input[type="text"]:focus {
+      border-color: #00ccff;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-bottom: 12px;
+    }
+    #start-btn {
+      background: #00ccff;
+      color: #000;
+    }
+    #start-btn:hover { background: #33ddff; }
+    #start-btn.active {
+      background: #f44;
+      color: #fff;
+    }
+    #start-btn.active:hover { background: #f66; }
+
+    #regenerate-btn {
+      background: rgba(255,255,255,0.05);
+      color: #00ccff;
+      font-size: 12px;
+      padding: 8px;
+    }
+    #regenerate-btn:hover { background: rgba(255,255,255,0.1); }
+
+    .status {
+      margin-bottom: 16px;
+      font-size: 12px;
+      text-align: center;
+      opacity: 0.7;
+      min-height: 18px;
+    }
+    .status .dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 5px;
+      vertical-align: middle;
+      background: #f44;
+    }
+    .status.connected .dot { background: #4f4; }
+
+    .gestures {
+      padding: 12px;
+      background: #1a1a1a;
+      border-radius: 8px;
+      font-size: 11px;
+      line-height: 1.8;
+      opacity: 0.7;
+    }
+    .gestures b { color: #00ccff; opacity: 1; }
+  </style>
+</head>
+<body>
+
+  <h1>SpatialGrip</h1>
+  <div class="subtitle">Control slides with hand gestures</div>
+
+  <div class="room-display">
+    <div class="room-label">Room Code</div>
+    <div class="room-code" id="room-code" title="Click to copy">------</div>
+    <img id="qr-code" alt="QR Code" />
+    <div class="scan-hint">Scan with your phone or open<br><b>/read</b> and enter the code</div>
+  </div>
+
+  <button id="start-btn">Start Listening</button>
+  <button id="regenerate-btn">🔄 Generate New Room Code</button>
+
+  <div class="status" id="status">
+    <span class="dot"></span> Not connected
+  </div>
+
+  <div class="settings">
+    <div class="settings-toggle" id="settings-toggle">⚙️ Settings</div>
+    <div class="settings-content" id="settings-content">
+      <label>Server URL</label>
+      <input type="text" id="server-url" value="https://spatialgrip.flowsxr.com" />
+      
+      <label style="margin-top: 12px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+        <input type="checkbox" id="swap-hands" style="cursor: pointer;">
+        <span>Swap hands (Left→Next, Right→Prev)</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="gestures">
+    <b><span id="right-action">Right hand: tap</span></b> → <span id="right-label">Next slide</span><br>
+    <b><span id="left-action">Left hand: tap</span></b> → <span id="left-label">Previous slide</span><br>
+    <br>
+    <i>Tap = pinch (thumb + index) then release</i><br>
+    <i>Wait 0.5s between taps for clean detection</i>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
