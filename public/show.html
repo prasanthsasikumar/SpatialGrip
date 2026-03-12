@@ -196,6 +196,27 @@
     const btn    = document.getElementById('upload-btn');
     const hint   = document.getElementById('upload-label');
 
+    // ── Auto-load default GLB model ──────────────────────────────────────
+    loader.load(
+      '/models/asahi.glb',
+      (gltf) => {
+        const model = gltf.scene;
+        const box = new THREE.Box3().setFromObject(model);
+        const centre = box.getCenter(new THREE.Vector3());
+        const size   = box.getSize(new THREE.Vector3()).length();
+        model.position.sub(centre);
+        const scale = 2.4 / size;
+        model.scale.setScalar(scale);
+        window.SceneManager.setObject(model);
+      },
+      undefined,
+      (err) => {
+        console.warn('Default GLB failed to load, keeping fallback cube', err);
+        const obj = window.SceneManager.getObject();
+        if (obj) obj.visible = true;
+      }
+    );
+
     input.addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;

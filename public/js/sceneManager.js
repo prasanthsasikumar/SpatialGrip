@@ -69,7 +69,9 @@ const SceneManager = (() => {
     _pointLight.position.set(5, 5, 5);
     _scene.add(_pointLight);
 
-    // ── Default object: rounded-edge cube ─────────────────────────────────
+    // ── Default object (loaded externally via GLB or fallback cube) ──────
+    // The default GLB model is loaded from show.html's module script.
+    // A simple placeholder is created here so _object is never null.
     const geo = new THREE.BoxGeometry(1.2, 1.2, 1.2, 4, 4, 4);
     const mat = new THREE.MeshStandardMaterial({
       color: 0x00ccff,
@@ -78,6 +80,7 @@ const SceneManager = (() => {
       wireframe: false,
     });
     _object = new THREE.Mesh(geo, mat);
+    _object.visible = false;   // hidden until GLB loads (or shown as fallback)
     _scene.add(_object);
 
     // ── Subtle grid helper (visual anchor) ────────────────────────────────
